@@ -15,7 +15,7 @@
  by Alex Wendland
  
  */
- 
+
 #include <SoftwareSerial.h>
 
 SoftwareSerial midiSerial(2, 3);
