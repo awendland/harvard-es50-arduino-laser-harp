@@ -41,7 +41,6 @@ static const uint8_t CHANNEL_PINS[] = {10,9,8,7};
 static const uint8_t FEED_PINS[] = {A0,A1,A2,A3};
 #define CUTOFF_THRESHOLD 50
 #define LASER_CNTRL_PIN 11
-#define ALERT_PIN 13
 #define MIDI_PIN 3
 static const uint8_t NOTE_PITCHES[] = {
   0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
@@ -63,7 +62,6 @@ static const uint8_t NOTE_CHANNELS[] = {
   0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
   0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90
 };
-#define NOTE_VELOCITY 0x45
 
 // Variables
 SoftwareSerial midiSerial(2, MIDI_PIN);
@@ -88,112 +86,13 @@ void setup() {
   }
   // Initiate laser control pin
   pinMode(LASER_CNTRL_PIN, OUTPUT);
-  // Initiate alert pin
-  pinMode(ALERT_PIN, OUTPUT);
-  //  Set MIDI baud rate:
-  midiSerial.begin(31250);
-  ////////////////////////////////////
-  // Run calibration for lasers &   //
-  // photoresisters                 //
-  ////////////////////////////////////
-  // Disable lasers and read these LOW photores values
-  digitalWrite(LASER_CNTRL_PIN, LOW);
-  uint16_t photoResLowVals[TOTAL_FEEDS];
-  readPhotoRes(photoResLowVals);
-  Serial.print("Low: ");
-  printIntArr(photoResLowVals, TOTAL_FEEDS);
-  // Enable lasers and read these HIGH photores values
   digitalWrite(LASER_CNTRL_PIN, HIGH);
-  delay(1000);
-  uint16_t photoResHighVals[TOTAL_FEEDS];
-  readPhotoRes(photoResHighVals);
-  Serial.print("High: ");
-  printIntArr(photoResHighVals, TOTAL_FEEDS);
-  // Calculate cutoff values
-  for (int i = 0; i < TOTAL_FEEDS; ++i) {
-    if (photoResHighVals[i] < photoResLowVals[i]
-        || photoResHighVals[i] - photoResLowVals[i] < CUTOFF_THRESHOLD) {
-      error = true;
-      Serial.print("Error at: ");
-      Serial.println(i);
-      photoResCutoffs[i] = 0;
-    } else {
-      const int offset = (photoResHighVals[i] - photoResLowVals[i]) / 2;
-      photoResCutoffs[i] = offset + photoResLowVals[i];
-    }
-  }
-  Serial.print("Cutoffs: ");
-  printIntArr(photoResCutoffs, TOTAL_FEEDS);
 }
 
 void loop() {
-  ////////////////////////////////////
-  // Blink if any errors occurred   //
-  ////////////////////////////////////
-  if (error) {
-    if (errorCounter < 2) {
-      delay(1000);
-      digitalWrite(LASER_CNTRL_PIN, LOW);
-      delay(1000);
-      digitalWrite(LASER_CNTRL_PIN, HIGH);
-      ++errorCounter;
-      return;
-    }
-  }
   uint16_t photoResVals[TOTAL_FEEDS];
-  ////////////////////////////////////
-  // Read in photo resister values  //
-  ////////////////////////////////////
   readPhotoRes(photoResVals);
-  ////////////////////////////////////
-  // Process the photo resister     //
-  // values                         //
-  ////////////////////////////////////
-  // Calculate which feeds are blocked
-  bool blockedFeeds[TOTAL_FEEDS];
-  for (int i = 0; i < TOTAL_FEEDS; ++i) {
-    blockedFeeds[i] = photoResVals[i] < photoResCutoffs[i];
-  }
-  // Check if any cross sections have been triggered
-  bool triggered[NUM_FEEDS_SIDE_A * NUM_FEEDS_SIDE_B];
-  for (int a = 0; a < NUM_FEEDS_SIDE_A; ++a) {
-    for (int b = 0; b < NUM_FEEDS_SIDE_B; ++b) {
-      triggered[a * NUM_FEEDS_SIDE_A + b] =
-          blockedFeeds[a] && blockedFeeds[NUM_FEEDS_SIDE_A + b];
-    }
-  }
-  ////////////////////////////////////
-  // Handle triggered cross         //
-  // sections                       //
-  ////////////////////////////////////
-  // Play the notes corresponding to the triggered intersections
-  for (int i = 0; i < NUM_INTERSECTIONS; ++i) {
-    if (triggered[i]) {
-      playNote(NOTE_CHANNELS[i], NOTE_PITCHES[i], NOTE_VELOCITY);
-    }
-  }
-  // Output the triggered intersections to Serial
-  bool anyTriggered = false;
-  for (int i = 0;
-      !anyTriggered && i < NUM_INTERSECTIONS;
-      anyTriggered = triggered[i], ++i);
-  if (anyTriggered) {
-    digitalWrite(ALERT_PIN, HIGH);
-    Serial.print("Triggered: ");
-    for (int a = 0; a < NUM_FEEDS_SIDE_A; ++a) {
-      for (int b = 0; b < NUM_FEEDS_SIDE_B; ++b) {
-        if (triggered[a * NUM_FEEDS_SIDE_A + b]) {
-          Serial.print(a);
-          Serial.print("x");
-          Serial.print(b);
-          Serial.print(" ");
-        }
-      }
-    }
-    Serial.println();
-  } else {
-    digitalWrite(ALERT_PIN, LOW);
-  }
+  printIntArr(photoResVals, TOTAL_FEEDS);
 }
 
 //
@@ -243,15 +142,4 @@ void printIntArr(uint16_t arr[], int sz) {
     Serial.print(" ");
   }
   Serial.println();
-}
-
-//
-// Plays a MIDI note.
-//
-void playNote(int cmd, int pitch, int velocity) {
-  midiSerial.write(cmd);
-  midiSerial.write(pitch);
-  midiSerial.write(velocity);
-  
-  printf(128, "   pitch: %u, cmd: %u, velocity: %u\n", pitch, cmd, velocity);
 }
